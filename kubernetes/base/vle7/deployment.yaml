@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: healthcare-cicd
+  labels:
+    app: healthcare-cicd
+    version: cicd
+spec:
+  replicas: 2
+  revisionHistoryLimit: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels:
+      app: healthcare-cicd
+      version: cicd
+  template:
+    metadata:
+      labels:
+        app: healthcare-cicd
+        version: cicd
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: healthcare
+          image: healthcare-app
+          imagePullPolicy: IfNotPresent
+          ports:
+            - {name: http, containerPort: 8080}
+          envFrom:
+            - configMapRef: {name: healthcare-config}
+          env:
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef: {name: healthcare-secrets, key: SECRET_KEY, optional: true}
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 250m, memory: 192Mi}
+          readinessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /health, port: http}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {medium: Memory, sizeLimit: 16Mi}

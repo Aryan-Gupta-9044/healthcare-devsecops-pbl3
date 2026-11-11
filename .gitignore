@@ -1,0 +1,26 @@
+# secrets / credentials - never commit
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+kubeconfig*
+*.kubeconfig
+.aws/
+credentials
+secrets.yaml
+secrets-local.yaml
+*-secret.local.yaml
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.coverage
+# generated
+reports/*
+!reports/.gitkeep
+kubernetes/.render/
+*.tar
+*.zip
+app/_demo_insecure.py

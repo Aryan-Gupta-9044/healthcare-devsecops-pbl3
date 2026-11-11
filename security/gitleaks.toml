@@ -1,0 +1,15 @@
+title = "healthcare-devsecops-pbl3 gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Generated output, virtualenvs and the intentional demo fixture"
+paths = [
+  '''(^|/)\.venv/''',
+  '''(^|/)reports/''',
+  '''(^|/)\.git/''',
+  '''^security/fixtures/''',
+  '''kubernetes/\.render/''',
+  '''\.zip$'''
+]

@@ -1,0 +1,35 @@
+// PBL3-VLE7-CICD  - CI/CD pipeline: Docker build + Kubernetes deployment via Jenkins
+def common
+
+pipeline {
+    agent { label params.JENKINS_AGENT_LABEL ?: 'built-in' }
+    options { timestamps(); timeout(time: 30, unit: 'MINUTES'); disableConcurrentBuilds(); buildDiscarder(logRotator(numToKeepStr: '10')) }
+    parameters {
+        choice(name: 'DEPLOY_ENV', choices: ['local', 'aws'], description: 'local = Minikube/Docker Desktop, aws = registry + remote cluster')
+        string(name: 'K8S_CONTEXT', defaultValue: '', description: 'kubectl context (empty = current context of the agent)')
+        string(name: 'K8S_NAMESPACE', defaultValue: 'healthcare', description: 'Target namespace')
+        string(name: 'DOCKER_IMAGE', defaultValue: 'healthcare-app', description: 'Image repo (aws: dockerhub-user/healthcare-app)')
+        string(name: 'DOCKER_IMAGE_TAG', defaultValue: '1.0.0', description: 'Image tag = application version')
+        string(name: 'JENKINS_AGENT_LABEL', defaultValue: 'built-in', description: 'Agent label (needs docker, kubectl, python3)')
+    }
+    stages {
+        stage('Checkout') {
+            steps { checkout scm; script { common = load 'jenkins/shared/common.groovy'; common.banner("VLE7 | env=${params.DEPLOY_ENV} ns=${params.K8S_NAMESPACE}") } }
+        }
+        stage('Install Dependencies') { steps { script { common.run('scripts/install-deps.sh test') } } }
+        stage('Unit Testing') {
+            steps { script { common.tests() } }
+            post { always { junit allowEmptyResults: true, testResults: 'reports/junit.xml' } }
+        }
+        stage('Docker Build') { steps { script { common.withTarget { common.run('scripts/build.sh vle7') } } } }
+        stage('Docker Image Validation') { steps { script { common.run('scripts/verify.sh image "$DOCKER_IMAGE:$DOCKER_IMAGE_TAG"') } } }
+        stage('Kubernetes Deployment') { steps { script { common.withTarget { common.run('scripts/deploy.sh vle7') } } } }
+        stage('Deployment Verification') { steps { script { common.withTarget { common.run('scripts/verify.sh vle7-k8s') } } } }
+        stage('Application Testing') { steps { script { common.withTarget { common.run('scripts/verify.sh vle7-http') } } } }
+    }
+    post {
+        success { echo 'FINAL STATUS: SUCCESS - application built, deployed and verified.' }
+        failure { echo 'FINAL STATUS: FAILED - see the failing stage above.' }
+        always  { archiveArtifacts artifacts: 'reports/**', allowEmptyArchive: true }
+    }
+}

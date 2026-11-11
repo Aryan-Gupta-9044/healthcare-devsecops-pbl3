@@ -1,0 +1,15 @@
+# SAFE TEST FIXTURE for the DevSecOps demo. It is never imported, never in the Docker image,
+# and only copied into app/ when DEMO_FAIL_GATE=true (scripts/security-demo.sh inject).
+# The "secret" below is random and protects nothing.
+import hashlib
+import subprocess
+
+DB_PASSWORD = "Xk9fQ2mZ7pLw4RtY8vNc"          # triggers Gitleaks (generic secret)
+
+
+def weak_hash(value):
+    return hashlib.md5(value.encode()).hexdigest()   # triggers Bandit B324 (HIGH)
+
+
+def run(cmd):
+    return subprocess.call(cmd, shell=True)           # triggers Bandit B602 (HIGH)

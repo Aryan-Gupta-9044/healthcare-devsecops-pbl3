@@ -1,0 +1,3 @@
+# Add accepted CVE ids below, ONE per line, with a justification and expiry date.
+# Example (do not enable without review):
+# CVE-0000-00000 exp:2026-12-31

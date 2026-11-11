@@ -1,0 +1,15 @@
+# Environment component: the ONLY differences between local and aws live here.
+# local: images are loaded into the cluster (minikube image load) so never pulled.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+patches:
+  - target: {kind: ConfigMap, name: healthcare-config}
+    patch: |-
+      - op: replace
+        path: /data/ENVIRONMENT
+        value: local
+  - target: {kind: Deployment}
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: Never

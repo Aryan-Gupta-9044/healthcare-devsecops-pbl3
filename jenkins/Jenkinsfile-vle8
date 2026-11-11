@@ -1,0 +1,59 @@
+// PBL3-VLE8-BLUE-GREEN - automated Blue-Green deployment (real Service selector switching)
+def common
+
+pipeline {
+    agent { label params.JENKINS_AGENT_LABEL ?: 'built-in' }
+    options { timestamps(); timeout(time: 45, unit: 'MINUTES'); disableConcurrentBuilds(); buildDiscarder(logRotator(numToKeepStr: '10')) }
+    parameters {
+        choice(name: 'ACTION', choices: ['deploy-and-switch', 'rollback'], description: 'rollback = point the Service back at Blue immediately')
+        choice(name: 'DEPLOY_ENV', choices: ['local', 'aws'], description: 'local = Minikube, aws = registry + remote cluster')
+        string(name: 'K8S_CONTEXT', defaultValue: '', description: 'kubectl context (empty = current)')
+        string(name: 'K8S_NAMESPACE', defaultValue: 'healthcare', description: 'Target namespace')
+        string(name: 'DOCKER_IMAGE', defaultValue: 'healthcare-app', description: 'Image repo')
+        string(name: 'BLUE_VERSION', defaultValue: '1.0.0', description: 'Blue app version (tag 1.0.0-blue)')
+        string(name: 'GREEN_VERSION', defaultValue: '2.0.0', description: 'Green app version (tag 2.0.0-green)')
+        booleanParam(name: 'APPROVAL_REQUIRED', defaultValue: true, description: 'Manual approval before traffic is switched to Green')
+        booleanParam(name: 'AUTO_ROLLBACK', defaultValue: true, description: 'Restore Blue automatically if post-switch verification fails')
+        string(name: 'JENKINS_AGENT_LABEL', defaultValue: 'built-in', description: 'Agent label (needs docker, kubectl)')
+    }
+    stages {
+        stage('Checkout') {
+            steps { checkout scm; script { common = load 'jenkins/shared/common.groovy'; common.banner("VLE8 ${params.ACTION} | env=${params.DEPLOY_ENV}") } }
+        }
+        stage('Build Blue Image')  { when { expression { params.ACTION == 'deploy-and-switch' } } steps { script { common.withTarget { common.run('scripts/build.sh blue') } } } }
+        stage('Deploy Blue')       { when { expression { params.ACTION == 'deploy-and-switch' } } steps { script { common.withTarget { common.run('scripts/deploy.sh blue') } } } }
+        stage('Verify Blue')       { when { expression { params.ACTION == 'deploy-and-switch' } } steps { script { common.withTarget { common.run('scripts/verify.sh blue') } } } }
+        stage('Build Green Image') { when { expression { params.ACTION == 'deploy-and-switch' } } steps { script { common.withTarget { common.run('scripts/build.sh green') } } } }
+        stage('Deploy Green')      { when { expression { params.ACTION == 'deploy-and-switch' } } steps { script { common.withTarget { common.run('scripts/deploy.sh green') } } } }
+        stage('Verify Green Health') { when { expression { params.ACTION == 'deploy-and-switch' } } steps { script { common.withTarget { common.run('scripts/verify.sh green') } } } }
+        stage('Smoke Testing') {
+            when { expression { params.ACTION == 'deploy-and-switch' } }
+            steps { script { common.withTarget { common.run('kubectl ${K8S_CONTEXT:+--context $K8S_CONTEXT} -n "$K8S_NAMESPACE" get deploy,pods,svc -o wide; scripts/verify.sh green') } } }
+        }
+        stage('Manual Approval') {
+            when { expression { params.ACTION == 'deploy-and-switch' && params.APPROVAL_REQUIRED } }
+            steps { timeout(time: 15, unit: 'MINUTES') { input message: 'Green is healthy. Switch live traffic from Blue to Green?', ok: 'Switch to Green' } }
+        }
+        stage('Switch Traffic to Green') { when { expression { params.ACTION == 'deploy-and-switch' } } steps { script { common.withTarget { common.run('scripts/blue-green-switch.sh green') } } } }
+        stage('Verify Traffic Reaches Green') {
+            when { expression { params.ACTION == 'deploy-and-switch' } }
+            steps {
+                script {
+                    common.withTarget {
+                        try { common.run('scripts/verify.sh traffic green') }
+                        catch (err) {
+                            if (params.AUTO_ROLLBACK) { echo 'Verification failed - rolling back to Blue'; common.run('scripts/rollback.sh blue') }
+                            throw err
+                        }
+                    }
+                }
+            }
+        }
+        stage('Rollback to Blue') { when { expression { params.ACTION == 'rollback' } } steps { script { common.withTarget { common.run('scripts/rollback.sh blue') } } } }
+    }
+    post {
+        success { echo "FINAL STATUS: SUCCESS (${params.ACTION}). Blue and Green deployments are both preserved for rollback." }
+        failure { echo 'FINAL STATUS: FAILED' }
+        always  { script { common?.withTarget { sh 'kubectl ${K8S_CONTEXT:+--context $K8S_CONTEXT} -n "$K8S_NAMESPACE" get svc healthcare-service -o jsonpath="{.spec.selector}" || true' } } }
+    }
+}
