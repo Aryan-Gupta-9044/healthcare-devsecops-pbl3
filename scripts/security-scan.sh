@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Usage: security-scan.sh bandit|gitleaks|deps|depcheck|trivy-image|trivy-fs|policy|report|all
 set -uo pipefail
+# Prevent Git Bash from converting Linux paths passed to Docker
+export MSYS_NO_PATHCONV=1
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 export PATH="$ROOT/.venv/bin:$PATH"
