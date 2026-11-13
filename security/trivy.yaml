@@ -1,10 +1,14 @@
-# Trivy defaults (CLI flags / env vars override). Used by scripts/security-scan.sh
+﻿# Trivy security scan configuration
 severity:
   - HIGH
   - CRITICAL
-ignore-unfixed: true
+
+vulnerability:
+  ignore-unfixed: true
+
 exit-code: 1
 timeout: 10m
+
 scan:
   scanners:
     - vuln
