@@ -66,6 +66,7 @@ run_gitleaks() {
     return 2
   }
 
+
   docker start -a "$name"
   local rc=$?
   docker cp "$name:/tmp/gitleaks.json" "$R/gitleaks.json" >/dev/null 2>&1 || true
@@ -111,6 +112,13 @@ run_trivy_docker() {
     return 2
   }
 
+  if [ -n "${TRIVY_INPUT_TAR:-}" ]; then
+    docker cp "$TRIVY_INPUT_TAR" "$name:/tmp/image.tar" || {
+      docker rm -f "$name" >/dev/null 2>&1
+      return 2
+    }
+  fi
+
   docker start -a "$name"
   local rc=$?
   docker cp "$name:/tmp/$output" "$R/$output" >/dev/null 2>&1 || true
@@ -143,14 +151,14 @@ run_trivy_image() {
   local tar="$R/image.tar"
   docker save "$img" -o "$tar" || return 2
 
-  run_trivy_docker "pbl9-trivy-json-$$" "trivy-image.json" \
+  TRIVY_INPUT_TAR="$tar" run_trivy_docker "pbl9-trivy-json-$$" "trivy-image.json" \
     image --config /tmp/security/trivy.yaml --ignorefile /tmp/.trivyignore \
     --severity "$TRIVY_SEVERITY" --format json \
     -o /tmp/trivy-image.json --exit-code 0 --input /tmp/image.tar
   local json_rc=$?
 
   # The second scan enforces the configured Trivy exit-code policy.
-  run_trivy_docker "pbl9-trivy-table-$$" "trivy-image.txt" \
+  TRIVY_INPUT_TAR="$tar" run_trivy_docker "pbl9-trivy-table-$$" "trivy-image.txt" \
     image --config /tmp/security/trivy.yaml --ignorefile /tmp/.trivyignore \
     --severity "$TRIVY_SEVERITY" --format table \
     -o /tmp/trivy-image.txt --input /tmp/image.tar
