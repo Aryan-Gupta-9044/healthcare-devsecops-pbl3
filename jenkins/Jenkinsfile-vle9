@@ -2,53 +2,173 @@
 def common
 
 pipeline {
-    agent { label params.JENKINS_AGENT_LABEL ?: 'built-in' }
-    options { timestamps(); timeout(time: 40, unit: 'MINUTES'); disableConcurrentBuilds(); buildDiscarder(logRotator(numToKeepStr: '10')) }
+    agent {
+        label params.JENKINS_AGENT_LABEL ?: 'built-in'
+    }
+
+    options {
+        timestamps()
+        timeout(time: 40, unit: 'MINUTES')
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '10'))
+    }
+
     parameters {
-        choice(name: 'DEPLOY_ENV', choices: ['local', 'aws'], description: 'Deployment target (security checks are identical for both)')
+        choice(name: 'DEPLOY_ENV', choices: ['local', 'aws'], description: 'Deployment target')
         string(name: 'K8S_CONTEXT', defaultValue: '', description: 'kubectl context (empty = current)')
         string(name: 'K8S_NAMESPACE', defaultValue: 'healthcare', description: 'Target namespace')
         string(name: 'DOCKER_IMAGE', defaultValue: 'healthcare-app', description: 'Image repo')
         string(name: 'DOCKER_IMAGE_TAG', defaultValue: '1.0.0', description: 'Image tag')
-        booleanParam(name: 'ENABLE_SECURITY_SCAN', defaultValue: true, description: 'Run the security gates')
-        booleanParam(name: 'DEMO_FAIL_GATE', defaultValue: false, description: 'Inject the SAFE test fixture to demonstrate failing gates (Bandit + Gitleaks)')
+
+        booleanParam(name: 'ENABLE_SECURITY_SCAN', defaultValue: true, description: 'Run security gates')
+        booleanParam(name: 'DEMO_FAIL_GATE', defaultValue: false, description: 'Inject safe test fixture to demonstrate failing gates')
+
         choice(name: 'BANDIT_FAIL_LEVEL', choices: ['HIGH', 'MEDIUM', 'LOW'], description: 'Lowest Bandit severity that fails the build')
         string(name: 'TRIVY_SEVERITY', defaultValue: 'HIGH,CRITICAL', description: 'Trivy severities that fail the build')
-        booleanParam(name: 'ENABLE_DEPCHECK', defaultValue: false, description: 'Optional OWASP Dependency-Check (slow: downloads NVD data)')
+
+        booleanParam(name: 'ENABLE_DEPCHECK', defaultValue: false, description: 'Optional OWASP Dependency-Check')
         booleanParam(name: 'DEPLOY_AFTER_SCAN', defaultValue: true, description: 'Deploy once all gates pass')
-        string(name: 'JENKINS_AGENT_LABEL', defaultValue: 'built-in', description: 'Agent label (needs docker, kubectl; trivy/gitleaks optional - Docker fallback)')
+
+        string(name: 'JENKINS_AGENT_LABEL', defaultValue: 'built-in', description: 'Agent label')
     }
+
     stages {
         stage('Git Checkout') {
-            steps { checkout scm; script { common = load 'jenkins/shared/common.groovy'; common.banner("VLE9 DevSecOps | demo-fail=${params.DEMO_FAIL_GATE}") } }
+            steps {
+                checkout scm
+                script {
+                    common = load 'jenkins/shared/common.groovy'
+                    common.banner("VLE9 DevSecOps | demo-fail=${params.DEMO_FAIL_GATE}")
+                }
+            }
         }
-        stage('Dependency Installation') { steps { script { common.run('scripts/install-deps.sh all') } } }
-        stage('Inject Demo Fixture') { when { expression { params.DEMO_FAIL_GATE } } steps { sh 'scripts/security-demo.sh inject' } }
-        stage('Bandit SAST Scan') { when { expression { params.ENABLE_SECURITY_SCAN } } steps { script { common.run('scripts/security-scan.sh bandit') } } }
-        stage('Gitleaks Secret Scan') { when { expression { params.ENABLE_SECURITY_SCAN } } steps { script { common.run('scripts/security-scan.sh gitleaks') } } }
+
+        stage('Dependency Installation') {
+            steps {
+                script {
+                    common.run('scripts/install-deps.sh all')
+                }
+            }
+        }
+
+        stage('Inject Demo Fixture') {
+            when {
+                expression { params.DEMO_FAIL_GATE }
+            }
+            steps {
+                sh 'scripts/security-demo.sh inject'
+            }
+        }
+
+        stage('Bandit SAST Scan') {
+            when {
+                expression { params.ENABLE_SECURITY_SCAN }
+            }
+            steps {
+                script {
+                    common.run('scripts/security-scan.sh bandit')
+                }
+            }
+        }
+
+        stage('Gitleaks Secret Scan') {
+            when {
+                expression { params.ENABLE_SECURITY_SCAN }
+            }
+            steps {
+                script {
+                    common.run('scripts/security-scan.sh gitleaks')
+                }
+            }
+        }
+
         stage('Python Dependency Scan') {
-            when { expression { params.ENABLE_SECURITY_SCAN } }
-            steps { script { common.run('scripts/security-scan.sh deps'); if (params.ENABLE_DEPCHECK) { common.run('scripts/security-scan.sh depcheck') } } }
+            when {
+                expression { params.ENABLE_SECURITY_SCAN }
+            }
+            steps {
+                script {
+                    common.run('scripts/security-scan.sh deps')
+
+                    if (params.ENABLE_DEPCHECK) {
+                        common.run('scripts/security-scan.sh depcheck')
+                    }
+                }
+            }
         }
-        stage('Docker Image Build') { steps { script { common.withTarget { common.run('scripts/build.sh vle7') } } } }
-        stage('Trivy Image Scan') { when { expression { params.ENABLE_SECURITY_SCAN } } steps { script { common.run('scripts/security-scan.sh trivy-image') } } }
-        stage('Security Policy Validation') { when { expression { params.ENABLE_SECURITY_SCAN } } steps { script { common.run('scripts/security-scan.sh policy') } } }
+
+        stage('Docker Image Build') {
+            steps {
+                script {
+                    common.withTarget {
+                        common.run('scripts/build.sh vle7')
+                    }
+                }
+            }
+        }
+
+        stage('Trivy Image Scan') {
+            when {
+                expression { params.ENABLE_SECURITY_SCAN }
+            }
+            steps {
+                script {
+                    common.run('scripts/security-scan.sh trivy-image')
+                }
+            }
+        }
+
+        stage('Security Policy Validation') {
+            when {
+                expression { params.ENABLE_SECURITY_SCAN }
+            }
+            steps {
+                script {
+                    common.run('scripts/security-scan.sh policy')
+                }
+            }
+        }
+
         stage('Application Testing') {
-            steps { script { common.tests() } }
-            post { always { junit allowEmptyResults: true, testResults: 'reports/junit.xml' } }
+            steps {
+                script {
+                    common.tests()
+                }
+            }
+            post {
+                always {
+                    junit allowEmptyResults: true, testResults: 'reports/junit.xml'
+                }
+            }
         }
+
         stage('Secure Deployment') {
-            when { expression { params.DEPLOY_AFTER_SCAN } }
-            steps { script { common.withTarget { common.run('scripts/deploy.sh vle7 && scripts/verify.sh vle7-http') } } }
+            when {
+                expression { params.DEPLOY_AFTER_SCAN }
+            }
+            steps {
+                script {
+                    common.withTarget {
+                        common.run('scripts/deploy.sh vle7 && scripts/verify.sh vle7-http')
+                    }
+                }
+            }
         }
     }
+
     post {
         always {
             sh 'scripts/security-demo.sh remove || true'
             sh 'scripts/security-scan.sh report || true'
             archiveArtifacts artifacts: 'reports/**', allowEmptyArchive: true
         }
-        success { echo 'FINAL STATUS: all security gates passed - deployed securely.' }
-        failure { echo 'FINAL STATUS: SECURITY GATE (or build step) FAILED - nothing was deployed. See reports/ artifacts.' }
+
+        success {
+            echo 'FINAL STATUS: all security gates passed - deployed securely.'
+        }
+
+        failure {
+            echo 'FINAL STATUS: SECURITY GATE (or build step) FAILED - nothing was deployed. See reports/ artifacts.'
+        }
     }
 }
