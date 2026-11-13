@@ -1,4 +1,4 @@
-﻿// Shared helpers loaded by all three pipelines.
+// Shared helpers loaded by all three pipelines.
 
 def banner(String msg) {
     echo "=" * 70 + "\n  ${msg}\n" + "=" * 70
