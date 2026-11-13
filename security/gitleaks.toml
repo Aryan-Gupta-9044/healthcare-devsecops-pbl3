@@ -9,7 +9,8 @@ paths = [
   '''(^|/)\.venv/''',
   '''(^|/)reports/''',
   '''(^|/)\.git/''',
-  '''^security/fixtures/''',
+  '''(^|/)security/fixtures/''',
   '''kubernetes/\.render/''',
   '''\.zip$'''
 ]
+

@@ -16,6 +16,11 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     APP_VERSION=${APP_VERSION} \
     DEPLOYMENT_COLOR=${DEPLOYMENT_COLOR}
 
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && apt-get clean \
+ && rm -rf /var/lib/apt/lists/*
+
 RUN groupadd --system --gid 10001 appgrp \
  && useradd --system --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin appusr
 
